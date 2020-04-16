@@ -1,3 +1,6 @@
+#EGN4060 Spr2020 Final Project
+#Julia Warner and Victoria Guise
+
 import numpy as np
 import scipy
 import sklearn.cluster
@@ -9,19 +12,15 @@ from threading import Thread
 import librosa
 
 #mixer from pygame module used to play music
+import pygame
 from pygame import mixer
 
 
-
-
 #DJ-R3X class
-
-#end DJ-R3X class
 class DJR3X:
     #constructor
     def __init__(self):
-        #array defining different color combinations for the 9 lighting segments
-        self.lighting_array = [('\033[93m')]
+        self.visualiser = DJ_Visualiser()
 
     #input: valid filepath to an mp3 file
     #DJ-R3X will play the song, dance, and flash his lights
@@ -36,18 +35,20 @@ class DJR3X:
         beat_times = librosa.frames_to_time(beat_frames, sr=sample_rate)
         beat_index = 0
         beat_array_len = len(beat_times)
+		
+		#initialize BPM for visualizer
+        self.visualiser.init_bpm(tempo)
 
         #extract song segment information
         segment_times, segment_labels = self.segment_song(song, sample_rate, tempo, beat_frames)
         segment_index = 0
-
-        print(beat_frames)
 
         print("It's time to party!")
         mixer.music.play()
 
         #initial time to base meaurements off of
         t0 = time.time()
+        prev_time = time.time()
 
         #loop until song is over
         while(beat_index < beat_array_len):
@@ -63,6 +64,12 @@ class DJR3X:
                 #switch segment according to label
                 self.new_segment(segment_labels[segment_index])
                 segment_index += 1
+				
+			#update visualiser
+            current_time = time.time()
+            deltaT = current_time - prev_time
+            self.visualiser.update(deltaT)
+            prev_time = current_time
 
     #splits song into distinct musical segments
     #code taken from http://librosa.github.io/librosa_gallery/auto_examples/plot_segmentation.html
@@ -152,16 +159,126 @@ class DJR3X:
 
     def new_segment(self, segment_label):
         print('\n\n')
+        self.visualiser.set_lighting(segment_label)
 
     #this function causes DJ-R3X's head to bop
     def bop(self):
-        print('\033[38;5;16;48;5;196m' + 'Head bop!' + '\033[0m')
+        print('Head bop!')
 #end DJ-R3X class
 
+#Class for pygame visualisation code
+class DJ_Visualiser():
+	def __init__(self):
+		#define lighting sequences variables
+		self.lighting_array = [(1, 255, 0, 0), (1, 0, 130, 255), (1, 255, 130, 0), (0, 130, 255, 0), (0, 0, 0, 255), (0, 130, 0, 255), (2, 255, 0, 0), (2, 0, 255, 0), (2, 0, 255, 130)]
+		self.l_changing_i = self.lighting_array[0][0]
+		self.l_current_rgb = [self.lighting_array[0][1], self.lighting_array[0][2], self.lighting_array[0][3]]
+		self.l_increasing = True
+		self.l_index = 0
+		self.l_time = 0
+		
+		#load DJ-R3X images
+		self.head_image = pygame.image.load('head.png')
+		self.body_image = pygame.image.load('body.png')
+		
+		#initialize pygame window
+		self.screen = pygame.display.set_mode((500, 500))
+		pygame.display.set_caption("Welcome to Oga's Cantina!")
+		
+		#initialize lighting color
+		self.screen.fill((0,0,0))
+		
+		#initialize DJ image
+		self.body_pos = (150, 210)
+		self.screen.blit(self.body_image, self.body_pos)
+		self.head_x = 200
+		self.head_y = 100
+		self.screen.blit(self.head_image, (self.head_x, self.head_y))
+		
+		#head bop variables
+		self.h_time = 0
+		self.h_lowering = True
+		self.bpm = 60
+		self.spb = 1 #seconds per beat
+		
+		pygame.display.update()
+	
+	#BPM used in head bop calculations
+	#if init_bpm is not called, default to 90BPM as set in constructor
+	def init_bpm(self, BPM):
+		self.bpm = BPM
+		self.spb = (1 / BPM) * 60
+	
+	#calls methods that update the lighting and head effects with new time
+	def update(self, deltaT):
+	    #update lighting 
+		self.update_lighting(deltaT)
+		
+		#update dj
+		self.update_head(deltaT)
+		
+		pygame.display.update()
+		
+	#expects delta time variable in seconds
+	#updates the color value of the screen background and adds that to the screen
+	def update_lighting(self, deltaT):
+		#calculate amount of change
+		self.l_time += deltaT
+		if(self.l_time >= 2.0):
+			self.l_time = 0
+			self.l_increasing = not self.l_increasing
+		change = self.l_time * 60 #change 120 color val every 2 seconds, 120/2 = 60
+		if(not self.l_increasing):
+		   change *= -1
+			
+		#determine new value for changing rgb value
+		if(self.l_increasing):
+			base = self.lighting_array[self.l_index][self.l_changing_i+1]
+		else:
+			base = self.lighting_array[self.l_index][self.l_changing_i+1] + 120 #light shifts are 120 apart
+		new = base + change
+		if(new > 255):
+			new = 255
+		elif(new < 0):
+			new = 0
+		
+		#display new screen color
+		self.l_current_rgb[self.l_changing_i] = new
+		self.screen.fill((self.l_current_rgb[0], self.l_current_rgb[1], self.l_current_rgb[2]))
+	
+	
+	def update_head(self, deltaT):
+		#calculate amount of change
+		self.h_time += deltaT
+		if(self.h_time >= self.spb):
+			self.h_time = 0
+			self.h_lowering = not self.h_lowering
+		change = self.h_time * 30 / self.spb #change 30 pixels every beay
+		
+		#determine new head y value
+		if(self.h_lowering):
+			new_y = 100 + change
+		else:
+			new_y = 130 - change
+		
+		#set new head y
+		self.head_y = new_y
+		
+		#display the DJ
+		self.screen.blit(self.body_image, self.body_pos)
+		self.screen.blit(self.head_image, (self.head_x, self.head_y))
+	
+	#expects an integer value 0-8, used to change over to new lighting sequence
+	def set_lighting(self, segment_label):
+		self.l_index = segment_label
+		self.l_changing_i = self.lighting_array[segment_label][0]
+		self.l_current_rgb = [self.lighting_array[segment_label][1], self.lighting_array[segment_label][2], self.lighting_array[segment_label][3]]
+	
 
 #main function
 def main():
     #initialize pygame
+    pygame.init()
     mixer.init()
 
     rex = DJR3X()
